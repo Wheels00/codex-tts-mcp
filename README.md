@@ -15,7 +15,7 @@ Reliable macOS MCP server for audible TTS from agent contexts, with queue-aware 
   - `~/Library/Spelling/LocalDictionary`
   - iCloud candidate replacements TSV
 - LaunchAgent-backed menu bar app with:
-  - icon + label state (`speaker` when on, `speaker slash` when muted)
+  - icon + label state (`🤖💬` when on, `🤖🤐` when muted)
   - `Settings…` dialog to change default voice and speed
 
 ## File tree
@@ -23,6 +23,8 @@ Reliable macOS MCP server for audible TTS from agent contexts, with queue-aware 
 ```text
 .
 ├── README.md
+├── docs
+│   └── AI_EXPOSED_TOOLS.md
 ├── pyproject.toml
 ├── scripts
 │   ├── codex_tts_menubar.swift
@@ -84,6 +86,16 @@ Optional: inspect the generated block:
 - `get_speech_settings()`
 - `update_vocabulary(terms)`
 
+## AI Tool Contract
+
+- `speak` is raw/pass-through speech.
+  - The MCP will speak `text` exactly as provided.
+  - No automatic prefix or suffix is added.
+  - `prefix_codex` is kept only for backward compatibility and is ignored.
+- Defaults for `voice` and `rate` come from shared speech settings (menu bar `Settings…`) when not explicitly provided.
+- Decision rules for *what* to say and *when* to say it belong in skills (for example `tts-announcer`), not in the MCP server.
+- Full AI-facing tool contract: [docs/AI_EXPOSED_TOOLS.md](/Users/markbrown/Documents/Mark's general MCP/docs/AI_EXPOSED_TOOLS.md)
+
 ### Queue pattern for multi-task runs
 
 1. Intermediate completions:
@@ -96,8 +108,8 @@ This gives one final spoken summary instead of one per subtask.
 ## Menu bar
 
 - Menu bar item shows icon + `CodexTTS`.
-  - On: speaker icon
-  - Muted: speaker-slash icon
+  - On: `🤖💬`
+  - Muted: `🤖🤐`
 - Toggle mute from menu item.
 - Open `Settings…` to change default voice and rate.
 - MCP `speak` returns `method="muted"` when mute is on.

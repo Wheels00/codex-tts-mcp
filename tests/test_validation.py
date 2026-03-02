@@ -27,7 +27,7 @@ class ValidationTests(unittest.TestCase):
             interrupt=False,
             prefix_codex=True,
         )
-        self.assertEqual(args.text, "codex task finished")
+        self.assertEqual(args.text, "task finished")
         self.assertEqual(args.voice, "Samantha")
         self.assertEqual(args.rate, 190)
 

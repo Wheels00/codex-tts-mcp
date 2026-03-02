@@ -28,7 +28,7 @@ def speak_tool(
     queue_key: str = "default",
     debounce_ms: int | None = None,
 ) -> dict:
-    """Speak text audibly on macOS with helper-first reliability and optional queueing."""
+    """Speak provided text audibly on macOS; text is spoken as-is (no auto prefix/suffix)."""
     return speak(
         text=text,
         voice=voice,

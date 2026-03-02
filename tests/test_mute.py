@@ -38,7 +38,7 @@ class MuteTests(unittest.TestCase):
 
                 self.assertTrue(result.get("ok"))
                 self.assertEqual(result.get("method"), "muted")
-                self.assertEqual(result.get("spoken_text"), "codex task finished")
+                self.assertEqual(result.get("spoken_text"), "task finished")
                 helper_mock.assert_not_called()
                 osa_mock.assert_not_called()
                 say_mock.assert_not_called()

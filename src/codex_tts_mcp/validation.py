@@ -19,6 +19,8 @@ class ValidatedSpeakArgs:
 
 
 def ensure_prefix_codex(text: str, enabled: bool) -> str:
+    # Backward-compatible helper retained for tests/integrations; no longer used
+    # by speech validation so MCP speech is always raw/pass-through.
     stripped = text.strip()
     if not enabled:
         return stripped
@@ -66,9 +68,8 @@ def validate_and_normalize(
     if not cleaned:
         raise ValueError("text cannot be empty")
 
-    spoken = ensure_prefix_codex(cleaned, prefix_codex)
-    if len(spoken) > MAX_TEXT_LENGTH + 6:
-        raise ValueError("text too long after prefix handling")
+    # Intentionally keep speech payload pass-through: no automatic prefixes/suffixes.
+    spoken = cleaned
 
     return ValidatedSpeakArgs(
         text=spoken,
@@ -77,4 +78,3 @@ def validate_and_normalize(
         interrupt=bool(interrupt),
         prefix_codex=bool(prefix_codex),
     )
-
