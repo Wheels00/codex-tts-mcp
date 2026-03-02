@@ -14,6 +14,7 @@ from .config import (
     DEFAULT_HELPER_LABEL,
     DEFAULT_MENUBAR_LABEL,
     DEFAULT_MUTE_STATE_PATH,
+    DEFAULT_SETTINGS_PATH,
     DEFAULT_RATE,
     DEFAULT_SOCKET_PATH,
     DEFAULT_VOICE,
@@ -21,7 +22,7 @@ from .config import (
 from .helper_client import HelperClientError, helper_health, helper_list_voices, helper_speak
 from .logging_utils import setup_logging
 from .macos_audio import list_voices_local, run_osascript_say, run_say
-from .validation import validate_and_normalize
+from .validation import validate_and_normalize, validate_rate, validate_voice
 
 logger = setup_logging("codex_tts_mcp.service")
 EMAIL_FIX_PATTERN = re.compile(r"\s*([@.])\s*")
@@ -90,6 +91,124 @@ def get_mute_status(state_path: Path = DEFAULT_MUTE_STATE_PATH) -> dict[str, Any
     return {"ok": True, "muted": muted, "state_path": str(path), "error": None}
 
 
+def _read_speech_settings(
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
+) -> dict[str, Any]:
+    path = Path(settings_path).expanduser()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+    if not isinstance(data, dict):
+        return {}
+
+    result: dict[str, Any] = {}
+    voice = data.get("voice")
+    if isinstance(voice, str):
+        try:
+            result["voice"] = validate_voice(voice)
+        except ValueError:
+            pass
+    rate = data.get("rate")
+    if rate is not None:
+        try:
+            result["rate"] = validate_rate(int(rate))
+        except (TypeError, ValueError):
+            pass
+    return result
+
+
+def _effective_default_voice_rate(settings_path: Path) -> tuple[str, int]:
+    settings = _read_speech_settings(settings_path)
+    raw_voice = settings.get("voice") or os.environ.get("CODEX_TTS_VOICE", DEFAULT_VOICE)
+    raw_rate = settings.get("rate")
+    if raw_rate is None:
+        raw_rate = _as_int(os.environ.get("CODEX_TTS_RATE"), DEFAULT_RATE)
+
+    try:
+        voice = validate_voice(str(raw_voice))
+    except ValueError:
+        voice = DEFAULT_VOICE
+
+    try:
+        rate = validate_rate(int(raw_rate))
+    except ValueError:
+        rate = DEFAULT_RATE
+
+    return voice, rate
+
+
+def get_speech_settings(
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
+) -> dict[str, Any]:
+    path = Path(settings_path).expanduser()
+    voice, rate = _effective_default_voice_rate(path)
+    return {
+        "ok": True,
+        "voice": voice,
+        "rate": rate,
+        "settings_path": str(path),
+        "error": None,
+    }
+
+
+def set_speech_settings(
+    voice: str | None = None,
+    rate: int | None = None,
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
+) -> dict[str, Any]:
+    path = Path(settings_path).expanduser()
+    current = _read_speech_settings(path)
+
+    if voice is None and rate is None:
+        return {"ok": False, "error": "voice or rate must be provided"}
+
+    next_voice = current.get("voice")
+    next_rate = current.get("rate")
+
+    try:
+        if voice is not None:
+            next_voice = validate_voice(voice)
+        if rate is not None:
+            next_rate = validate_rate(int(rate))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+    payload = {
+        "voice": next_voice or _effective_default_voice_rate(path)[0],
+        "rate": next_rate if next_rate is not None else _effective_default_voice_rate(path)[1],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=".tmp-settings-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+            handle.write("\n")
+        os.replace(temp_path, path)
+    except Exception as exc:  # noqa: BLE001
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        logger.error("tool=set_speech_settings result=error err=%s", exc)
+        return {"ok": False, "error": str(exc), "settings_path": str(path)}
+
+    logger.info(
+        "tool=set_speech_settings result=ok voice=%s rate=%s",
+        payload["voice"],
+        payload["rate"],
+    )
+    return {
+        "ok": True,
+        "voice": payload["voice"],
+        "rate": payload["rate"],
+        "settings_path": str(path),
+        "error": None,
+    }
+
+
 def _speak_now(
     text: str,
     voice: str | None,
@@ -98,9 +217,11 @@ def _speak_now(
     prefix_codex: bool,
     socket_path: Path,
     mute_state_path: Path,
+    settings_path: Path,
 ) -> dict[str, Any]:
-    selected_voice = voice or os.environ.get("CODEX_TTS_VOICE", DEFAULT_VOICE)
-    selected_rate = _as_int(rate, _as_int(os.environ.get("CODEX_TTS_RATE"), DEFAULT_RATE))
+    default_voice, default_rate = _effective_default_voice_rate(settings_path)
+    selected_voice = voice or default_voice
+    selected_rate = _as_int(rate, default_rate)
 
     try:
         args = validate_and_normalize(
@@ -197,7 +318,7 @@ def _speak_now(
 
 
 def _flush_queue_key(
-    queue_key: str, socket_path: Path, mute_state_path: Path
+    queue_key: str, socket_path: Path, mute_state_path: Path, settings_path: Path
 ) -> dict[str, Any]:
     with QUEUE_LOCK:
         payload = QUEUE_PAYLOADS.pop(queue_key, None)
@@ -218,6 +339,7 @@ def _flush_queue_key(
         prefix_codex=payload["prefix_codex"],
         socket_path=socket_path,
         mute_state_path=mute_state_path,
+        settings_path=settings_path,
     )
 
 
@@ -227,10 +349,11 @@ def _schedule_debounce(
     debounce_ms: int,
     socket_path: Path,
     mute_state_path: Path,
+    settings_path: Path,
 ) -> None:
     def _timer_fire() -> None:
         try:
-            _flush_queue_key(queue_key, socket_path, mute_state_path)
+            _flush_queue_key(queue_key, socket_path, mute_state_path, settings_path)
         except Exception as exc:  # noqa: BLE001
             logger.error("tool=speak mode=debounce timer_error=%s", exc)
 
@@ -253,6 +376,7 @@ def speak(
     prefix_codex: bool = False,
     socket_path: Path = DEFAULT_SOCKET_PATH,
     mute_state_path: Path = DEFAULT_MUTE_STATE_PATH,
+    settings_path: Path = DEFAULT_SETTINGS_PATH,
     queue_mode: str = "immediate",
     queue_key: str = "default",
     debounce_ms: int | None = None,
@@ -282,8 +406,9 @@ def speak(
                 prefix_codex=prefix_codex,
                 socket_path=socket_path,
                 mute_state_path=mute_state_path,
+                settings_path=settings_path,
             )
-        return _flush_queue_key(key, socket_path, mute_state_path)
+        return _flush_queue_key(key, socket_path, mute_state_path, settings_path)
 
     if mode == "debounce":
         ms = _as_int(
@@ -302,7 +427,10 @@ def speak(
             "interrupt": interrupt,
             "prefix_codex": prefix_codex,
         }
-        _schedule_debounce(key, payload, ms, socket_path, mute_state_path)
+        _schedule_debounce(
+            key, payload, ms, socket_path, mute_state_path, settings_path
+        )
+        default_voice, default_rate = _effective_default_voice_rate(settings_path)
         logger.info("tool=speak mode=debounce key=%s ms=%s queued=1", key, ms)
         return {
             "ok": True,
@@ -311,8 +439,8 @@ def speak(
             "queue_key": key,
             "debounce_ms": ms,
             "spoken_text": "",
-            "voice": voice or os.environ.get("CODEX_TTS_VOICE", DEFAULT_VOICE),
-            "rate": _as_int(rate, _as_int(os.environ.get("CODEX_TTS_RATE"), DEFAULT_RATE)),
+            "voice": voice or default_voice,
+            "rate": _as_int(rate, default_rate),
             "error": None,
         }
 
@@ -324,6 +452,7 @@ def speak(
         prefix_codex=prefix_codex,
         socket_path=socket_path,
         mute_state_path=mute_state_path,
+        settings_path=settings_path,
     )
 
 
@@ -367,6 +496,9 @@ def healthcheck(socket_path: Path = DEFAULT_SOCKET_PATH) -> dict[str, Any]:
     loaded, launchctl_error = _launchctl_helper_loaded(DEFAULT_HELPER_LABEL)
     menubar_loaded, menubar_error = _launchctl_helper_loaded(DEFAULT_MENUBAR_LABEL)
     mute = get_mute_status()
+    speech_settings = get_speech_settings()
+    default_voice = speech_settings.get("voice", DEFAULT_VOICE)
+    default_rate = _as_int(speech_settings.get("rate"), DEFAULT_RATE)
     voices = list_voices_local()
 
     diagnostics = []
@@ -392,8 +524,8 @@ def healthcheck(socket_path: Path = DEFAULT_SOCKET_PATH) -> dict[str, Any]:
         "audio": {
             "say_binary": shutil.which("say") is not None,
             "voices_count": len(voices),
-            "default_voice": os.environ.get("CODEX_TTS_VOICE", DEFAULT_VOICE),
-            "default_rate": _as_int(os.environ.get("CODEX_TTS_RATE"), DEFAULT_RATE),
+            "default_voice": default_voice,
+            "default_rate": default_rate,
         },
         "helper": {
             "label": DEFAULT_HELPER_LABEL,
@@ -412,6 +544,7 @@ def healthcheck(socket_path: Path = DEFAULT_SOCKET_PATH) -> dict[str, Any]:
             "error": menubar_error,
         },
         "mute": mute,
+        "speech_settings": speech_settings,
         "diagnostics": diagnostics,
     }
 

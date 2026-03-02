@@ -9,11 +9,14 @@ Reliable macOS MCP server for audible TTS from agent contexts, with queue-aware 
   2. `osascript` fallback
   3. direct `say` fallback
 - Queue-aware announcements (`immediate`, `debounce`, `flush`)
-- Global mute state shared by MCP + menu bar app
+- Speech serialization in helper daemon (simultaneous agent completions are spoken one-at-a-time)
+- Global mute + speech settings state shared by MCP + menu bar app
 - Vocabulary update tool for:
   - `~/Library/Spelling/LocalDictionary`
   - iCloud candidate replacements TSV
-- LaunchAgent-backed menu bar toggle: `CodexTTS:On` / `CodexTTS:Mute`
+- LaunchAgent-backed menu bar app with:
+  - icon + label state (`speaker` when on, `speaker slash` when muted)
+  - `Settings…` dialog to change default voice and speed
 
 ## File tree
 
@@ -38,8 +41,10 @@ Reliable macOS MCP server for audible TTS from agent contexts, with queue-aware 
 │       ├── service.py
 │       └── validation.py
 └── tests
+    ├── test_helper_serialization.py
     ├── test_integration_helper_path.py
     ├── test_mute.py
+    ├── test_speech_settings.py
     ├── test_speak_queue.py
     ├── test_validation.py
     └── test_vocab_update.py
@@ -75,6 +80,8 @@ Optional: inspect the generated block:
 - `healthcheck()`
 - `set_mute(muted)`
 - `get_mute_status()`
+- `set_speech_settings(voice?, rate?)`
+- `get_speech_settings()`
 - `update_vocabulary(terms)`
 
 ### Queue pattern for multi-task runs
@@ -86,12 +93,13 @@ Optional: inspect the generated block:
 
 This gives one final spoken summary instead of one per subtask.
 
-## Menu bar mute
+## Menu bar
 
-- Menu bar item title shows current state:
-  - `CodexTTS:On`
-  - `CodexTTS:Mute`
+- Menu bar item shows icon + `CodexTTS`.
+  - On: speaker icon
+  - Muted: speaker-slash icon
 - Toggle mute from menu item.
+- Open `Settings…` to change default voice and rate.
 - MCP `speak` returns `method="muted"` when mute is on.
 
 ## Share with Claire (GitHub)

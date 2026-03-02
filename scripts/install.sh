@@ -8,6 +8,7 @@ BIN_DIR="$APP_DIR/bin"
 LOG_DIR="$APP_DIR/logs"
 SOCKET_PATH="${CODEX_TTS_SOCKET:-$APP_DIR/tts.sock}"
 MUTE_STATE_PATH="${CODEX_TTS_MUTE_STATE:-$APP_DIR/mute_state.json}"
+SETTINGS_PATH="${CODEX_TTS_SETTINGS_PATH:-$APP_DIR/speech_settings.json}"
 
 HELPER_LABEL="com.codex.tts.helper"
 MENUBAR_LABEL="com.codex.tts.menubar"
@@ -69,6 +70,12 @@ cat > "$HELPER_PLIST" <<PLIST
     <string>$SOCKET_PATH</string>
     <key>CODEX_TTS_MUTE_STATE</key>
     <string>$MUTE_STATE_PATH</string>
+    <key>CODEX_TTS_SETTINGS_PATH</key>
+    <string>$SETTINGS_PATH</string>
+    <key>CODEX_TTS_VOICE</key>
+    <string>Samantha</string>
+    <key>CODEX_TTS_RATE</key>
+    <string>190</string>
   </dict>
 </dict>
 </plist>
@@ -97,6 +104,12 @@ cat > "$MENUBAR_PLIST" <<PLIST
   <dict>
     <key>CODEX_TTS_MUTE_STATE</key>
     <string>$MUTE_STATE_PATH</string>
+    <key>CODEX_TTS_SETTINGS_PATH</key>
+    <string>$SETTINGS_PATH</string>
+    <key>CODEX_TTS_VOICE</key>
+    <string>Samantha</string>
+    <key>CODEX_TTS_RATE</key>
+    <string>190</string>
   </dict>
 </dict>
 </plist>
@@ -122,11 +135,14 @@ fi
 if [[ ! -f "$MUTE_STATE_PATH" ]]; then
   printf '{"muted": false}\n' > "$MUTE_STATE_PATH"
 fi
+if [[ ! -f "$SETTINGS_PATH" ]]; then
+  printf '{"voice": "Samantha", "rate": 190}\n' > "$SETTINGS_PATH"
+fi
 
 CODEX_CONFIG_PATH="${CODEX_CONFIG_PATH:-$HOME/.codex/config.toml}"
 mkdir -p "$(dirname "$CODEX_CONFIG_PATH")"
 
-python3 - "$CODEX_CONFIG_PATH" "$SERVER_DIR" "$SOCKET_PATH" "$MUTE_STATE_PATH" <<'PY'
+python3 - "$CODEX_CONFIG_PATH" "$SERVER_DIR" "$SOCKET_PATH" "$MUTE_STATE_PATH" "$SETTINGS_PATH" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -135,6 +151,7 @@ cfg_path = Path(sys.argv[1])
 server_dir = sys.argv[2]
 socket_path = sys.argv[3]
 mute_state_path = sys.argv[4]
+settings_path = sys.argv[5]
 
 content = cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else ""
 
@@ -157,6 +174,7 @@ block = (
     f'PYTHONPATH = "{server_dir}/src"\n'
     f'CODEX_TTS_SOCKET = "{socket_path}"\n'
     f'CODEX_TTS_MUTE_STATE = "{mute_state_path}"\n'
+    f'CODEX_TTS_SETTINGS_PATH = "{settings_path}"\n'
     'CODEX_TTS_VOICE = "Samantha"\n'
     'CODEX_TTS_RATE = "190"\n'
 )

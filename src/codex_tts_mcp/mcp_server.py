@@ -4,10 +4,12 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP
 
 from codex_tts_mcp.service import (
+    get_speech_settings,
     get_mute_status,
     healthcheck,
     list_voices,
     set_mute,
+    set_speech_settings,
     speak,
     update_vocabulary,
 )
@@ -67,6 +69,20 @@ def set_mute_tool(muted: bool) -> dict:
 def get_mute_status_tool() -> dict:
     """Get current mute status used by speak and the menu bar helper."""
     return get_mute_status()
+
+
+@mcp.tool(name="set_speech_settings")
+def set_speech_settings_tool(
+    voice: str | None = None, rate: int | None = None
+) -> dict:
+    """Set default voice/rate used by speak when not explicitly provided."""
+    return set_speech_settings(voice=voice, rate=rate)
+
+
+@mcp.tool(name="get_speech_settings")
+def get_speech_settings_tool() -> dict:
+    """Get effective default voice/rate and settings file path."""
+    return get_speech_settings()
 
 
 def main() -> None:

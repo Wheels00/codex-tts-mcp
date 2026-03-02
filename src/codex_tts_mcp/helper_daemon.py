@@ -7,6 +7,7 @@ import os
 import signal
 import socket
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from codex_tts_mcp.validation import validate_and_normalize
 
 logger = setup_logging("codex_tts_mcp.helper")
 SHUTDOWN = threading.Event()
+SPEAK_LOCK = threading.Lock()
 
 
 def _safe_unlink(path: Path) -> None:
@@ -47,12 +49,15 @@ def _handle_request(payload: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             return _response(False, "helper", error=f"validation failed: {exc}")
 
-        result = run_say(
-            text=args.text,
-            voice=args.voice,
-            rate=args.rate,
-            interrupt=args.interrupt,
-        )
+        wait_start = time.monotonic()
+        with SPEAK_LOCK:
+            wait_ms = int((time.monotonic() - wait_start) * 1000)
+            result = run_say(
+                text=args.text,
+                voice=args.voice,
+                rate=args.rate,
+                interrupt=args.interrupt,
+            )
         if result.ok:
             return _response(
                 True,
@@ -60,8 +65,14 @@ def _handle_request(payload: dict[str, Any]) -> dict[str, Any]:
                 spoken_text=args.text,
                 voice=args.voice,
                 rate=args.rate,
+                wait_ms=wait_ms,
             )
-        return _response(False, "helper_launchagent_say", error=result.error)
+        return _response(
+            False,
+            "helper_launchagent_say",
+            error=result.error,
+            wait_ms=wait_ms,
+        )
 
     if action == "list_voices":
         voices = list_voices_local()
@@ -154,4 +165,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

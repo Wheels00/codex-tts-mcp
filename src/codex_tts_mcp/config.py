@@ -10,6 +10,9 @@ DEFAULT_SOCKET_PATH = Path(
 DEFAULT_MUTE_STATE_PATH = Path(
     os.environ.get("CODEX_TTS_MUTE_STATE", str(APP_DIR / "mute_state.json"))
 )
+DEFAULT_SETTINGS_PATH = Path(
+    os.environ.get("CODEX_TTS_SETTINGS_PATH", str(APP_DIR / "speech_settings.json"))
+)
 DEFAULT_HELPER_LABEL = os.environ.get("CODEX_TTS_HELPER_LABEL", "com.codex.tts.helper")
 DEFAULT_MENUBAR_LABEL = os.environ.get(
     "CODEX_TTS_MENUBAR_LABEL", "com.codex.tts.menubar"
