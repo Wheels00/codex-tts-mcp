@@ -19,6 +19,9 @@ MENUBAR_LOG="$LOG_DIR/menubar.log"
 mkdir -p "$APP_DIR" "$SERVER_DIR" "$BIN_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
 chmod 700 "$APP_DIR"
 
+launchctl bootout "gui/$(id -u)/$HELPER_LABEL" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)/$MENUBAR_LABEL" >/dev/null 2>&1 || true
+
 rsync -a --delete "$ROOT_DIR/src/" "$SERVER_DIR/src/"
 cp "$ROOT_DIR/pyproject.toml" "$SERVER_DIR/pyproject.toml"
 
@@ -30,7 +33,10 @@ if ! command -v xcrun >/dev/null 2>&1; then
   exit 1
 fi
 
-xcrun swiftc -O "$ROOT_DIR/scripts/codex_tts_menubar.swift" -o "$BIN_DIR/codex-tts-menubar" >/dev/null 2>&1
+if ! xcrun swiftc -O "$ROOT_DIR/scripts/codex_tts_menubar.swift" -o "$BIN_DIR/codex-tts-menubar" >/dev/null 2>&1; then
+  echo "ERROR: failed to build menu bar app (swiftc)" >&2
+  exit 1
+fi
 chmod +x "$BIN_DIR/codex-tts-menubar"
 
 cat > "$HELPER_PLIST" <<PLIST
@@ -95,9 +101,6 @@ cat > "$MENUBAR_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
-
-launchctl bootout "gui/$(id -u)/$HELPER_LABEL" >/dev/null 2>&1 || true
-launchctl bootout "gui/$(id -u)/$MENUBAR_LABEL" >/dev/null 2>&1 || true
 
 if ! launchctl bootstrap "gui/$(id -u)" "$HELPER_PLIST" >/dev/null 2>&1; then
   launchctl kickstart -k "gui/$(id -u)/$HELPER_LABEL" >/dev/null
