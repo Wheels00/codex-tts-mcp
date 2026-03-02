@@ -129,17 +129,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let button = statusItem.button else {
             return
         }
-        button.title = " CodexTTS"
-        button.imagePosition = .imageLeading
+        let icon = muted ? "🤖🤐" : "🤖💬"
+        button.title = "\(icon) CodexTTS"
         button.toolTip = muted ? "Codex TTS muted" : "Codex TTS on"
-
-        let symbol = muted ? "speaker.slash.fill" : "speaker.wave.2.fill"
-        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) {
-            image.isTemplate = true
-            button.image = image
-        } else {
-            button.image = nil
-        }
+        button.image = nil
     }
 
     private func isValidVoice(_ value: String) -> Bool {
