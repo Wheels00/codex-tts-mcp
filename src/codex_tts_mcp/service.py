@@ -218,6 +218,7 @@ def _speak_now(
     socket_path: Path,
     mute_state_path: Path,
     settings_path: Path,
+    check_mute: bool = True,
 ) -> dict[str, Any]:
     default_voice, default_rate = _effective_default_voice_rate(settings_path)
     selected_voice = voice or default_voice
@@ -241,7 +242,7 @@ def _speak_now(
             "error": str(exc),
         }
 
-    if _read_mute_state(mute_state_path):
+    if check_mute and _read_mute_state(mute_state_path):
         logger.info("tool=speak method=muted result=ok")
         return {
             "ok": True,
@@ -314,6 +315,46 @@ def _speak_now(
         "voice": args.voice,
         "rate": args.rate,
         "error": error_msg,
+    }
+
+
+def _muted_response(
+    text: str,
+    voice: str | None,
+    rate: int | None,
+    interrupt: bool,
+    prefix_codex: bool,
+    settings_path: Path,
+) -> dict[str, Any]:
+    default_voice, default_rate = _effective_default_voice_rate(settings_path)
+    selected_voice = voice or default_voice
+    selected_rate = _as_int(rate, default_rate)
+
+    try:
+        args = validate_and_normalize(
+            text=text,
+            voice=selected_voice,
+            rate=selected_rate,
+            interrupt=interrupt,
+            prefix_codex=prefix_codex,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "method": "validation",
+            "spoken_text": "",
+            "voice": selected_voice,
+            "rate": selected_rate,
+            "error": str(exc),
+        }
+
+    return {
+        "ok": True,
+        "method": "muted",
+        "spoken_text": args.text,
+        "voice": args.voice,
+        "rate": args.rate,
+        "error": None,
     }
 
 
@@ -391,6 +432,15 @@ def speak(
     if mode not in {"immediate", "debounce", "flush"}:
         return {"ok": False, "method": "validation", "error": "invalid queue_mode"}
 
+    if _read_mute_state(mute_state_path):
+        # Fast-path: no helper call/queue scheduling when muted.
+        with QUEUE_LOCK:
+            pending = QUEUE_TIMERS.pop(key, None)
+            if pending is not None:
+                pending.cancel()
+            QUEUE_PAYLOADS.pop(key, None)
+        return _muted_response(text, voice, rate, interrupt, prefix_codex, settings_path)
+
     if mode == "flush":
         if text and text.strip():
             with QUEUE_LOCK:
@@ -407,6 +457,7 @@ def speak(
                 socket_path=socket_path,
                 mute_state_path=mute_state_path,
                 settings_path=settings_path,
+                check_mute=False,
             )
         return _flush_queue_key(key, socket_path, mute_state_path, settings_path)
 
@@ -453,6 +504,7 @@ def speak(
         socket_path=socket_path,
         mute_state_path=mute_state_path,
         settings_path=settings_path,
+        check_mute=False,
     )
 
 

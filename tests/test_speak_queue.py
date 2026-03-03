@@ -1,4 +1,6 @@
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from codex_tts_mcp import service
@@ -6,6 +8,10 @@ from codex_tts_mcp import service
 
 class SpeakQueueTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.mute_state_path = Path(self._tmp.name) / "mute_state.json"
+        service.set_mute(False, state_path=self.mute_state_path)
         with service.QUEUE_LOCK:
             for timer in service.QUEUE_TIMERS.values():
                 timer.cancel()
@@ -23,6 +29,7 @@ class SpeakQueueTests(unittest.TestCase):
                 queue_mode="debounce",
                 queue_key="batch-a",
                 debounce_ms=20000,
+                mute_state_path=self.mute_state_path,
             )
             self.assertTrue(result.get("ok"))
             self.assertEqual(result.get("method"), "debounced_queue")
@@ -46,12 +53,14 @@ class SpeakQueueTests(unittest.TestCase):
                 queue_mode="debounce",
                 queue_key="batch-b",
                 debounce_ms=20000,
+                mute_state_path=self.mute_state_path,
             )
             result = service.speak(
                 text="all queued tasks complete",
                 prefix_codex=True,
                 queue_mode="flush",
                 queue_key="batch-b",
+                mute_state_path=self.mute_state_path,
             )
             self.assertTrue(result.get("ok"))
             speak_now.assert_called_once()
